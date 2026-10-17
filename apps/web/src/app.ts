@@ -494,6 +494,10 @@ export class App {
     }
     this.bindCanvas(canvas);
     window.addEventListener('resize', () => this.stage.resize());
+    // An embedding frame can change size (or start at 0×0) without the window noticing.
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => this.stage.resize()).observe(canvas);
+    }
     window.addEventListener('keydown', (event) => this.onKey(event));
     window.addEventListener('keyup', (event) => this.onKeyUp(event));
     window.addEventListener('pointermove', (event) => this.onTrayDragMove(event));
@@ -896,7 +900,16 @@ export class App {
       }
     }
     const washing = this.state?.phase === 'washing';
-    this.watchCamera?.update(this.stage.cameras.active, this.stage.controls.target);
+    if (this.watchCamera !== null) {
+      const { clientWidth, clientHeight } = this.stage.canvas;
+      if (clientWidth > 0 && clientHeight > 0) {
+        this.watchCamera.update(
+          this.stage.cameras.active,
+          this.stage.controls.target,
+          clientWidth / clientHeight,
+        );
+      }
+    }
     if (this.water !== null) {
       const wash = this.wash;
       let fraction = 0;
