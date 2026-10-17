@@ -2,7 +2,14 @@
 import { describe, expect, it } from 'vitest';
 import { cleanPlayerName, gridFrames, itemCentres, parseEpisodeLink } from './benchmark.ts';
 
-const NO_FLAGS = { watch: false, nofx: false, fxdemo: false, turntable: false, item: null };
+const NO_FLAGS = {
+  watch: false,
+  nofx: false,
+  fxdemo: false,
+  turntable: false,
+  nohud: false,
+  item: null,
+};
 
 describe('parseEpisodeLink', () => {
   it('reads the flags of a watching page', () => {
@@ -14,6 +21,7 @@ describe('parseEpisodeLink', () => {
       nofx: false,
       fxdemo: false,
       turntable: false,
+      nohud: false,
       item: null,
     });
     expect(parseEpisodeLink(`#${id}&watch&nofx&player=P1`)).toEqual({
@@ -23,6 +31,7 @@ describe('parseEpisodeLink', () => {
       nofx: true,
       fxdemo: false,
       turntable: false,
+      nohud: false,
       item: null,
     });
     expect(parseEpisodeLink(`#${id}&fxdemo=1`)).toEqual({
@@ -32,6 +41,7 @@ describe('parseEpisodeLink', () => {
       nofx: false,
       fxdemo: true,
       turntable: false,
+      nohud: false,
       item: null,
     });
     expect(parseEpisodeLink('#fxdemo')).toEqual({
@@ -41,6 +51,7 @@ describe('parseEpisodeLink', () => {
       nofx: false,
       fxdemo: true,
       turntable: false,
+      nohud: false,
       item: null,
     });
   });
@@ -50,6 +61,7 @@ describe('parseEpisodeLink', () => {
       turntable: true,
       item: 'plate_01',
     });
+    expect(parseEpisodeLink('#abc&watch&nohud')).toMatchObject({ watch: true, nohud: true });
     expect(parseEpisodeLink('#abc&turntable')).toMatchObject({ turntable: true, item: null });
   });
   it('reads the episode and, when it is there, the player', () => {

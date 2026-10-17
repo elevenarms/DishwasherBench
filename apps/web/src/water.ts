@@ -634,6 +634,12 @@ export class WaterFx {
     this.resetMist();
   }
 
+  /** Deepens the colour of the water, for a light backdrop. */
+  setDeepTint(r: number, g: number, b: number): void {
+    (this.streakMaterial.uniforms['uDeep']?.value as Color).setRGB(r, g, b);
+    (this.poolMaterial.uniforms['uDeep']?.value as Color).setRGB(r * 0.6, g * 0.75, b * 0.75);
+  }
+
   /** Whether the demonstration plays (without a wash). */
   get demo(): boolean {
     return this.demoOn;

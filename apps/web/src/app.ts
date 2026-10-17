@@ -110,7 +110,7 @@ import { DISCLAIMER, howToPlay } from './how-to.ts';
 import { WaterFx } from './water.ts';
 import { WatchCamera } from './watch.ts';
 import { Turntable } from './turntable.ts';
-import { Vector3 } from 'three';
+import { Color, Mesh, MeshStandardMaterial, Vector3 } from 'three';
 import { INSPECTOR_SIDES, ItemInspector } from './inspector.ts';
 import type { DrawPose, GhostPose } from './pose.ts';
 import {
@@ -480,7 +480,16 @@ export class App {
     this.watchCamera = this.flags.watch ? new WatchCamera() : null;
     if (this.flags.watch) {
       document.body.classList.add('watch');
-      this.hud.hidden = false;
+      this.hud.hidden = this.flags.nohud;
+      // The look of the Studio that embeds it: off-white, a light neutral floor, deeper water.
+      const three = this.stage.scene.scene;
+      three.background = new Color('#f6f6f4');
+      const floor = three.getObjectByName('kitchen_floor');
+      if (floor instanceof Mesh && floor.material instanceof MeshStandardMaterial) {
+        floor.material.color.set('#e4e4e1');
+        floor.material.roughness = 0.95;
+      }
+      this.water?.setDeepTint(0.24, 0.47, 0.78);
       this.stage.controls.enabled = false;
     }
     this.bindCanvas(canvas);
@@ -918,7 +927,7 @@ export class App {
       this.stage.webgl.render(this.turntable.scene, this.turntable.camera);
       return;
     }
-    if (this.flags.watch && this.hudAge > 0.25) this.renderHud();
+    if (this.flags.watch && !this.flags.nohud && this.hudAge > 0.25) this.renderHud();
     this.stage.render();
   }
 

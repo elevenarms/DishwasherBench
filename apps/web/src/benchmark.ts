@@ -22,13 +22,15 @@ export interface EpisodeLink {
   readonly nofx: boolean;
   /** `&fxdemo`: the cosmetic water plays without a wash. */
   readonly fxdemo: boolean;
+  /** `&nohud`: a watching page without its small display (the embedding page shows its own). */
+  readonly nohud: boolean;
   /** `&turntable`: only one item, turning on a plinth. */
   readonly turntable: boolean;
   /** `&item=<item id>`: the item of the turntable; null for the one placed last. */
   readonly item: string | null;
 }
 
-const LINK_FLAGS = new Set(['watch', 'nofx', 'fxdemo', 'turntable']);
+const LINK_FLAGS = new Set(['watch', 'nofx', 'fxdemo', 'turntable', 'nohud']);
 
 /** Longest player name the server takes. */
 export const PLAYER_NAME_MAX = 64;
@@ -75,6 +77,7 @@ export function parseEpisodeLink(hash: string): EpisodeLink {
     watch: flags.has('watch'),
     nofx: flags.has('nofx'),
     fxdemo: flags.has('fxdemo'),
+    nohud: flags.has('nohud'),
     turntable: flags.has('turntable'),
     item,
   };
