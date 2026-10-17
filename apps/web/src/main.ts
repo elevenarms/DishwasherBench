@@ -9,4 +9,5 @@ const app = new App(root);
 // For the screenshot script: lets it wait until the page has caught up with the server.
 (window as unknown as { spotless: App }).spotless = app;
 void app.start();
-startAudio();
+// A watching page (`#<episode>&watch`, embedded in a visualiser) makes no sound at all.
+if (!app.flags.watch) startAudio();

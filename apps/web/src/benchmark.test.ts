@@ -2,20 +2,70 @@
 import { describe, expect, it } from 'vitest';
 import { cleanPlayerName, gridFrames, itemCentres, parseEpisodeLink } from './benchmark.ts';
 
+const NO_FLAGS = { watch: false, nofx: false, fxdemo: false };
+
 describe('parseEpisodeLink', () => {
+  it('reads the flags of a watching page', () => {
+    const id = 'abc';
+    expect(parseEpisodeLink(`#${id}&watch`)).toEqual({
+      sessionId: id,
+      player: null,
+      watch: true,
+      nofx: false,
+      fxdemo: false,
+    });
+    expect(parseEpisodeLink(`#${id}&watch&nofx&player=P1`)).toEqual({
+      sessionId: id,
+      player: 'P1',
+      watch: true,
+      nofx: true,
+      fxdemo: false,
+    });
+    expect(parseEpisodeLink(`#${id}&fxdemo=1`)).toEqual({
+      sessionId: id,
+      player: null,
+      watch: false,
+      nofx: false,
+      fxdemo: true,
+    });
+    expect(parseEpisodeLink('#fxdemo')).toEqual({
+      sessionId: null,
+      player: null,
+      watch: false,
+      nofx: false,
+      fxdemo: true,
+    });
+  });
   it('reads the episode and, when it is there, the player', () => {
     const id = '4d0c6a0e-7f1b-4c0c-9a51-2f6d2b7f9c11';
-    expect(parseEpisodeLink(`#${id}`)).toEqual({ sessionId: id, player: null });
-    expect(parseEpisodeLink(`#${id}&player=P07`)).toEqual({ sessionId: id, player: 'P07' });
+    expect(parseEpisodeLink(`#${id}`)).toEqual({ sessionId: id, player: null, ...NO_FLAGS });
+    expect(parseEpisodeLink(`#${id}&player=P07`)).toEqual({
+      sessionId: id,
+      player: 'P07',
+      ...NO_FLAGS,
+    });
     expect(parseEpisodeLink(`#${id}&player=Ada%20L.&x=1`)).toEqual({
       sessionId: id,
       player: 'Ada L.',
+      ...NO_FLAGS,
     });
-    expect(parseEpisodeLink(`#${id}&player=Ada+L.`)).toEqual({ sessionId: id, player: 'Ada L.' });
-    expect(parseEpisodeLink(`#${id}&player=`)).toEqual({ sessionId: id, player: null });
-    expect(parseEpisodeLink(`#${id}&player=%E0%A4%A`)).toEqual({ sessionId: id, player: null });
-    expect(parseEpisodeLink('')).toEqual({ sessionId: null, player: null });
-    expect(parseEpisodeLink('#')).toEqual({ sessionId: null, player: null });
+    expect(parseEpisodeLink(`#${id}&player=Ada+L.`)).toEqual({
+      sessionId: id,
+      player: 'Ada L.',
+      ...NO_FLAGS,
+    });
+    expect(parseEpisodeLink(`#${id}&player=`)).toEqual({
+      sessionId: id,
+      player: null,
+      ...NO_FLAGS,
+    });
+    expect(parseEpisodeLink(`#${id}&player=%E0%A4%A`)).toEqual({
+      sessionId: id,
+      player: null,
+      ...NO_FLAGS,
+    });
+    expect(parseEpisodeLink('')).toEqual({ sessionId: null, player: null, ...NO_FLAGS });
+    expect(parseEpisodeLink('#')).toEqual({ sessionId: null, player: null, ...NO_FLAGS });
   });
 });
 

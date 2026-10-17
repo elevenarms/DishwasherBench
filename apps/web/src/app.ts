@@ -107,6 +107,9 @@ import {
   tidy,
 } from './format.ts';
 import { DISCLAIMER, howToPlay } from './how-to.ts';
+import { WaterFx } from './water.ts';
+import { WatchCamera } from './watch.ts';
+import { Vector3 } from 'three';
 import { INSPECTOR_SIDES, ItemInspector } from './inspector.ts';
 import type { DrawPose, GhostPose } from './pose.ts';
 import {
@@ -392,6 +395,15 @@ export class App {
   private showGrid = false;
   /** The four pictures of each item (the ones `get_item` returns to an agent), by item id. */
   private readonly itemPictures = new Map<string, string[]>();
+  /** The flags of the address: watching only, no water, the water without a wash. */
+  readonly flags = parseEpisodeLink(location.hash);
+  /** The cosmetic water of the wash; null with `&nofx`. */
+  private readonly water: WaterFx | null;
+  private readonly watchCamera: WatchCamera | null;
+  private readonly hud: HTMLElement;
+  private hudAge = 0;
+  /** True while the page is finding out about a wash it did not start. */
+  private adopting = false;
 
   constructor(root: HTMLElement) {
     const canvas = h('canvas', { id: 'view', tabindex: '0' });
@@ -428,11 +440,27 @@ export class App {
       root,
       el['top'],
       el['tray'],
-      h('main', { id: 'stage' }, canvas, overlay, el['hint'], el['working']),
+      h(
+        'main',
+        { id: 'stage' },
+        canvas,
+        overlay,
+        el['hint'],
+        el['working'],
+        (this.hud = h('div', { id: 'watch-hud', hidden: true })),
+      ),
       el['side'],
       el['modal'],
     );
     this.stage = new Stage(canvas, overlay);
+    this.water = this.flags.nofx ? null : new WaterFx(this.stage.scene.scene);
+    if (this.flags.fxdemo) this.water?.setDemo(true);
+    this.watchCamera = this.flags.watch ? new WatchCamera() : null;
+    if (this.flags.watch) {
+      document.body.classList.add('watch');
+      this.hud.hidden = false;
+      this.stage.controls.enabled = false;
+    }
     this.bindCanvas(canvas);
     window.addEventListener('resize', () => this.stage.resize());
     window.addEventListener('keydown', (event) => this.onKey(event));
@@ -580,7 +608,7 @@ export class App {
       // Through the session; an older server has only the open route.
       const card = await api.card().catch(() => levelCard(summary.level_id));
       await this.enter(api, card, await api.scene());
-      await this.identify(api, playerFromLink);
+      if (!this.flags.watch) await this.identify(api, playerFromLink);
       this.renderTop();
       if (summary.job !== null && summary.phase !== 'loading') {
         this.wash = {
@@ -649,6 +677,7 @@ export class App {
     this.stage.setView('iso_lower', this.subject());
     this.updateMarks();
     this.connect();
+    if (this.flags.watch) this.renderHud();
     this.renderAll();
     // Thumbnails are drawn after the first picture of the machine is up.
     window.setTimeout(() => this.drawThumbnails(), 30);
@@ -682,6 +711,16 @@ export class App {
     this.basketPlans.clear();
     const scene = this.stage.scene;
     scene.setMachine(geometry.machine.parts);
+    this.water?.setMachine(
+      geometry.machine.machine_id,
+      geometry.machine.parts,
+      this.card.machine.tub_min_mm,
+      this.card.machine.tub_max_mm,
+    );
+    this.watchCamera?.frame(
+      this.card.machine.tub_min_mm.map((v) => v / 1000),
+      this.card.machine.tub_max_mm.map((v) => v / 1000),
+    );
     scene.addItemTypes(Object.values(geometry.item_types));
     if (this.itemTypes.size === 0 || !this.itemTypesMatch(geometry)) {
       this.itemTypes.clear();
@@ -729,12 +768,26 @@ export class App {
         break;
       case 'animation':
         this.queue.enqueueFrames(message.frames);
+        this.watchNewItems(message.frames);
         break;
       case 'state':
         this.queue.enqueueFinal(message.scene);
         break;
       case 'wash':
-        if (this.wash !== null && this.wash.job_id === message.job_id) {
+        if (this.wash === null || this.wash.job_id !== message.job_id) {
+          // A wash started elsewhere (an agent, another page): follow it from here.
+          this.wash = {
+            job_id: message.job_id,
+            status: message.status,
+            progress: message.progress,
+            since: performance.now(),
+          };
+          if (message.error !== undefined) this.wash.error = message.error;
+          this.report = null;
+          this.reportPainted = false;
+          this.renderAll();
+          void this.pollReport();
+        } else {
           this.wash.status = message.status;
           this.wash.progress = message.progress;
           if (message.error !== undefined) this.wash.error = message.error;
@@ -784,6 +837,9 @@ export class App {
     if (view.state.phase === 'loading' && this.wash !== null && this.wash.status !== 'failed') {
       this.wash = null;
     }
+    if (view.state.phase !== 'loading' && this.wash === null && this.report === null) {
+      void this.adoptWash();
+    }
     this.updateGhost();
     this.renderAll();
   }
@@ -802,7 +858,135 @@ export class App {
         if (this.held !== null) this.updateGhost();
       }
     }
+    const washing = this.state?.phase === 'washing';
+    if (this.watchCamera !== null) {
+      this.watchCamera.update(
+        dt,
+        this.stage.cameras.active,
+        this.stage.controls.target,
+        washing || (this.water?.status().master ?? 0) > 0.05,
+      );
+    }
+    if (this.water !== null) {
+      const wash = this.wash;
+      let fraction = 0;
+      if (wash !== null && wash.status === 'running') {
+        fraction = washProgressView(
+          wash,
+          (now - (wash.stageAt ?? now)) / 1000,
+          (now - wash.since) / 1000,
+        ).fraction;
+      }
+      this.water.update(
+        dt,
+        { status: wash?.status ?? null, fraction, washing },
+        this.shownParts,
+        this.stage.cameras.active,
+        this.stage.canvas.height,
+      );
+    }
+    this.hudAge += dt;
+    if (this.flags.watch && this.hudAge > 0.25) this.renderHud();
     this.stage.render();
+  }
+
+  /** Finds the job of a wash this page did not start (the phase says one is on) and follows it. */
+  private async adoptWash(): Promise<void> {
+    const api = this.api;
+    if (api === null || this.adopting) return;
+    this.adopting = true;
+    try {
+      const summary = await api.summary();
+      if (this.api !== api || this.wash !== null || summary.job === null) return;
+      this.wash = {
+        job_id: summary.job.job_id,
+        status: summary.job.status,
+        progress: summary.job.progress,
+        since: performance.now(),
+      };
+      this.renderAll();
+      void this.pollReport();
+    } catch {
+      // The next state message tries again.
+    } finally {
+      this.adopting = false;
+    }
+  }
+
+  /** A watching page looks closely at an item that has just been put in the machine. */
+  private watchNewItems(
+    frames: readonly { readonly items: { readonly [id: string]: DrawPose } }[],
+  ): void {
+    if (this.watchCamera === null || this.view === null) return;
+    const last = frames[frames.length - 1];
+    if (last === undefined) return;
+    const placed = new Set(this.view.state.placed.map((p) => p.item_id));
+    for (const [id, pose] of Object.entries(last.items)) {
+      if (placed.has(id)) continue;
+      this.watchCamera.focusOn(
+        new Vector3(
+          pose.position_mm[0] / 1000,
+          pose.position_mm[1] / 1000,
+          pose.position_mm[2] / 1000 + 0.04,
+        ),
+        Math.max(3.5, frames.length / 30 + 2.5),
+      );
+      return;
+    }
+  }
+
+  /** The small display of a watching page: level, load, phase, wash, points. */
+  private renderHud(): void {
+    this.hudAge = 0;
+    const card = this.card;
+    const state = this.state;
+    if (card === null || state === null) {
+      setChildren(this.hud, h('div', { class: 'hud-title' }, 'Spotless'));
+      return;
+    }
+    const wash = this.wash;
+    const now = performance.now();
+    let washLine: Child = null;
+    if (this.report !== null) {
+      const view = reportView(card, this.report);
+      washLine = h(
+        'div',
+        { class: 'hud-points', id: 'hud-points' },
+        h('strong', null, `${view.points} / ${view.points_available} points`),
+        ` · ${view.clean} of ${view.loaded} clean`,
+      );
+    } else if (wash !== null && wash.status === 'failed') {
+      washLine = h('div', { class: 'hud-line bad' }, 'The wash failed on the server');
+    } else if (wash !== null) {
+      const progress = washProgressView(
+        wash,
+        (now - (wash.stageAt ?? now)) / 1000,
+        (now - wash.since) / 1000,
+      );
+      washLine = h(
+        'div',
+        { class: 'hud-wash' },
+        h('div', { class: 'hud-line' }, progress.title),
+        h(
+          'div',
+          { class: 'hud-bar' },
+          h('span', { style: `width:${(progress.fraction * 100).toFixed(1)}%` }),
+        ),
+      );
+    }
+    const phase =
+      state.phase === 'loading' ? 'Loading' : state.phase === 'washing' ? 'Washing' : 'Finished';
+    setChildren(
+      this.hud,
+      h('div', { class: 'hud-title' }, card.title),
+      h(
+        'div',
+        { class: 'hud-line' },
+        h('span', { class: `hud-phase ${state.phase}` }, phase),
+        ` · ${state.placed.length} / ${card.items.length} items placed`,
+      ),
+      washLine,
+    );
   }
 
   private get state(): SceneState | null {
@@ -2956,6 +3140,11 @@ export class App {
       else if (this.selected !== null) void this.takeOut(this.selected, false);
       return;
     }
+    if (key === 'w' && !event.altKey && this.water !== null) {
+      event.preventDefault();
+      this.water.setDemo(!this.water.demo);
+      return;
+    }
     if (key === 'z' && held === null) {
       event.preventDefault();
       void this.takeBackLast();
@@ -4581,6 +4770,12 @@ export class App {
         return { index, x, y, free: place.free, label: slotAdviceLabel(place) };
       })
       .filter((spot) => marked.has(spot.index));
+  }
+
+  /** For a script: plays the cosmetic water without a wash, held at a point of its cycle or looping. */
+  debugWater(on: boolean, at: number | null = null): ReturnType<WaterFx['status']> | null {
+    this.water?.setDemo(on, at);
+    return this.water?.status() ?? null;
   }
 
   /** What a test script may read to know when the page has caught up. Not used by the game. */

@@ -16,7 +16,15 @@ export interface EpisodeLink {
   readonly sessionId: string | null;
   /** The player's name, when the link carries one (`#<episode>&player=<name>`). */
   readonly player: string | null;
+  /** `&watch`: the page only watches the episode (no sound, no panels, a slow orbit). */
+  readonly watch: boolean;
+  /** `&nofx`: no cosmetic water during the wash. */
+  readonly nofx: boolean;
+  /** `&fxdemo`: the cosmetic water plays without a wash. */
+  readonly fxdemo: boolean;
 }
+
+const LINK_FLAGS = new Set(['watch', 'nofx', 'fxdemo']);
 
 /** Longest player name the server takes. */
 export const PLAYER_NAME_MAX = 64;
@@ -27,9 +35,19 @@ export const PLAYER_NAME_MAX = 64;
  */
 export function parseEpisodeLink(hash: string): EpisodeLink {
   const [first, ...rest] = hash.replace(/^#/, '').split('&');
-  const sessionId = first === undefined || first === '' ? null : first;
+  const flags = new Set<string>();
+  let sessionId = first === undefined || first === '' ? null : first;
+  if (sessionId !== null && LINK_FLAGS.has(sessionId.toLowerCase())) {
+    flags.add(sessionId.toLowerCase());
+    sessionId = null;
+  }
   let player: string | null = null;
   for (const part of rest) {
+    const flag = part.toLowerCase().replace(/=(1|true|yes)?$/, '');
+    if (LINK_FLAGS.has(flag)) {
+      flags.add(flag);
+      continue;
+    }
     const at = part.indexOf('=');
     if (at < 0 || part.slice(0, at) !== 'player') continue;
     try {
@@ -38,7 +56,13 @@ export function parseEpisodeLink(hash: string): EpisodeLink {
       player = null;
     }
   }
-  return { sessionId, player };
+  return {
+    sessionId,
+    player,
+    watch: flags.has('watch'),
+    nofx: flags.has('nofx'),
+    fxdemo: flags.has('fxdemo'),
+  };
 }
 
 /**

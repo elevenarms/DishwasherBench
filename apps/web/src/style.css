@@ -934,3 +934,74 @@ body.dragging-item * {
   border-style: dashed;
   color: var(--muted);
 }
+
+/* A watching page (`#<episode>&watch`): the stage fills the frame, with a small display. */
+body.watch #app {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'stage';
+}
+body.watch #topbar,
+body.watch #tray,
+body.watch #side,
+body.watch #hint,
+body.watch #working,
+body.watch .sound-control,
+body.watch #sound {
+  display: none !important;
+}
+#watch-hud {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  min-width: 220px;
+  max-width: 340px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(16, 24, 36, 0.62);
+  color: #f2f6fb;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+#watch-hud[hidden] {
+  display: none;
+}
+#watch-hud .hud-title {
+  font-weight: 650;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+#watch-hud .hud-phase {
+  font-weight: 600;
+}
+#watch-hud .hud-phase.washing {
+  color: #8fd3ff;
+}
+#watch-hud .hud-phase.finished {
+  color: #9be2b0;
+}
+#watch-hud .hud-bar {
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+#watch-hud .hud-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #5fb8ff, #bfe8ff);
+  transition: width 0.4s linear;
+}
+#watch-hud .hud-points {
+  margin-top: 4px;
+  font-size: 13px;
+}
+#watch-hud .hud-points strong {
+  color: #ffe08a;
+}
+#watch-hud .bad {
+  color: #ff9a9a;
+}
