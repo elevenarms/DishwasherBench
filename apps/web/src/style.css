@@ -1005,3 +1005,51 @@ body.watch #sound {
 #watch-hud .bad {
   color: #ff9a9a;
 }
+
+/* The turntable (`#<episode>&turntable&item=<id>`): one item on a plinth, a tiny label. */
+body.turntable {
+  background: #f6f6f4;
+}
+body.turntable #overlay {
+  display: none;
+}
+body.turntable #watch-hud {
+  left: 8px;
+  top: auto;
+  bottom: 8px;
+  min-width: 0;
+  max-width: calc(100% - 16px);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #111;
+  font-size: 11px;
+  backdrop-filter: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.turntable .tt-name {
+  font-weight: 600;
+}
+body.turntable .tt-id {
+  color: #777;
+}
+body.turntable .tt-state {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+body.turntable .tt-state.soiled {
+  background: #f1e3c8;
+  color: #6b4a12;
+}
+body.turntable .tt-state.clean {
+  background: #d6f2dd;
+  color: #17672f;
+}
+body.turntable .tt-state.residue {
+  background: #f8d6d3;
+  color: #9b1c14;
+}

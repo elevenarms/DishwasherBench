@@ -22,9 +22,13 @@ export interface EpisodeLink {
   readonly nofx: boolean;
   /** `&fxdemo`: the cosmetic water plays without a wash. */
   readonly fxdemo: boolean;
+  /** `&turntable`: only one item, turning on a plinth. */
+  readonly turntable: boolean;
+  /** `&item=<item id>`: the item of the turntable; null for the one placed last. */
+  readonly item: string | null;
 }
 
-const LINK_FLAGS = new Set(['watch', 'nofx', 'fxdemo']);
+const LINK_FLAGS = new Set(['watch', 'nofx', 'fxdemo', 'turntable']);
 
 /** Longest player name the server takes. */
 export const PLAYER_NAME_MAX = 64;
@@ -42,7 +46,16 @@ export function parseEpisodeLink(hash: string): EpisodeLink {
     sessionId = null;
   }
   let player: string | null = null;
+  let item: string | null = null;
   for (const part of rest) {
+    if (part.startsWith('item=')) {
+      try {
+        item = decodeURIComponent(part.slice(5)).trim() || null;
+      } catch {
+        item = null;
+      }
+      continue;
+    }
     const flag = part.toLowerCase().replace(/=(1|true|yes)?$/, '');
     if (LINK_FLAGS.has(flag)) {
       flags.add(flag);
@@ -62,6 +75,8 @@ export function parseEpisodeLink(hash: string): EpisodeLink {
     watch: flags.has('watch'),
     nofx: flags.has('nofx'),
     fxdemo: flags.has('fxdemo'),
+    turntable: flags.has('turntable'),
+    item,
   };
 }
 

@@ -10,4 +10,4 @@ const app = new App(root);
 (window as unknown as { spotless: App }).spotless = app;
 void app.start();
 // A watching page (`#<episode>&watch`, embedded in a visualiser) makes no sound at all.
-if (!app.flags.watch) startAudio();
+if (!app.flags.watch && !app.flags.turntable) startAudio();

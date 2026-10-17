@@ -149,6 +149,11 @@ export class Stage {
     this.cameras.resize(clientWidth / clientHeight);
   }
 
+  /** The renderer, for a scene of its own drawn on this canvas instead (the turntable). */
+  get webgl(): WebGLRenderer {
+    return this.renderer;
+  }
+
   /** Draws one frame. */
   render(): void {
     this.controls.update();

@@ -109,6 +109,7 @@ import {
 import { DISCLAIMER, howToPlay } from './how-to.ts';
 import { WaterFx } from './water.ts';
 import { WatchCamera } from './watch.ts';
+import { Turntable } from './turntable.ts';
 import { Vector3 } from 'three';
 import { INSPECTOR_SIDES, ItemInspector } from './inspector.ts';
 import type { DrawPose, GhostPose } from './pose.ts';
@@ -400,6 +401,11 @@ export class App {
   /** The cosmetic water of the wash; null with `&nofx`. */
   private readonly water: WaterFx | null;
   private readonly watchCamera: WatchCamera | null;
+  /** The one item turning on its plinth (`&turntable`), and which item it is asked to show. */
+  private readonly turntable: Turntable | null;
+  private turntableItem: string | null = null;
+  /** The item put in the machine last, for a turntable that names none. */
+  private lastPlaced: string | null = null;
   private readonly hud: HTMLElement;
   private hudAge = 0;
   /** True while the page is finding out about a wash it did not start. */
@@ -453,7 +459,23 @@ export class App {
       el['modal'],
     );
     this.stage = new Stage(canvas, overlay);
-    this.water = this.flags.nofx ? null : new WaterFx(this.stage.scene.scene);
+    this.water =
+      this.flags.nofx || this.flags.turntable ? null : new WaterFx(this.stage.scene.scene);
+    this.turntable = this.flags.turntable ? new Turntable(this.stage.webgl) : null;
+    if (this.turntable !== null) {
+      this.turntableItem = this.flags.item;
+      document.body.classList.add('watch', 'turntable');
+      this.hud.hidden = false;
+      this.stage.controls.enabled = false;
+      // The page that embeds this one follows the agent by changing the item in the address.
+      window.addEventListener('hashchange', () => {
+        const link = parseEpisodeLink(location.hash);
+        // Another episode: start again on it.
+        if (link.sessionId !== null && link.sessionId !== this.api?.sessionId) location.reload();
+        this.turntableItem = link.item;
+        this.hudAge = 1;
+      });
+    }
     if (this.flags.fxdemo) this.water?.setDemo(true);
     this.watchCamera = this.flags.watch ? new WatchCamera() : null;
     if (this.flags.watch) {
@@ -608,7 +630,7 @@ export class App {
       // Through the session; an older server has only the open route.
       const card = await api.card().catch(() => levelCard(summary.level_id));
       await this.enter(api, card, await api.scene());
-      if (!this.flags.watch) await this.identify(api, playerFromLink);
+      if (!this.flags.watch && !this.flags.turntable) await this.identify(api, playerFromLink);
       this.renderTop();
       if (summary.job !== null && summary.phase !== 'loading') {
         this.wash = {
@@ -768,7 +790,6 @@ export class App {
         break;
       case 'animation':
         this.queue.enqueueFrames(message.frames);
-        this.watchNewItems(message.frames);
         break;
       case 'state':
         this.queue.enqueueFinal(message.scene);
@@ -808,6 +829,13 @@ export class App {
   /** Makes a scene the current one: poses, state, and the geometry if the machine changed. */
   private applyScene(view: SceneView): void {
     const previousHash = this.view?.state.state_hash;
+    const before =
+      this.view === null ? null : new Set(this.view.state.placed.map((p) => p.item_id));
+    const added = view.state.placed.filter((p) => before !== null && !before.has(p.item_id));
+    if (added.length > 0) this.lastPlaced = added[added.length - 1]?.item_id ?? this.lastPlaced;
+    else if (before === null || this.lastPlaced === null) {
+      this.lastPlaced = view.state.placed[view.state.placed.length - 1]?.item_id ?? null;
+    }
     this.view = view;
     this.queriesSpent = 0;
     this.shownParts = { ...view.poses.parts };
@@ -859,14 +887,7 @@ export class App {
       }
     }
     const washing = this.state?.phase === 'washing';
-    if (this.watchCamera !== null) {
-      this.watchCamera.update(
-        dt,
-        this.stage.cameras.active,
-        this.stage.controls.target,
-        washing || (this.water?.status().master ?? 0) > 0.05,
-      );
-    }
+    this.watchCamera?.update(this.stage.cameras.active, this.stage.controls.target);
     if (this.water !== null) {
       const wash = this.wash;
       let fraction = 0;
@@ -886,8 +907,61 @@ export class App {
       );
     }
     this.hudAge += dt;
+    if (this.turntable !== null) {
+      if (this.hudAge > 0.25) this.renderTurntable();
+      const canvas = this.stage.canvas;
+      this.turntable.update(
+        dt,
+        canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1,
+      );
+      this.stage.webgl.clippingPlanes = [];
+      this.stage.webgl.render(this.turntable.scene, this.turntable.camera);
+      return;
+    }
     if (this.flags.watch && this.hudAge > 0.25) this.renderHud();
     this.stage.render();
+  }
+
+  /** Puts the item asked for on the turntable, soiled or as washed, with its label. */
+  private renderTurntable(): void {
+    this.hudAge = 0;
+    const turntable = this.turntable;
+    const geometry = this.geometry;
+    if (turntable === null || geometry === null) return;
+    const itemId = this.turntableItem ?? this.lastPlaced;
+    const itemType = itemId === null ? undefined : this.itemTypes.get(itemId);
+    if (itemId === null || itemType === undefined) {
+      turntable.clear();
+      setChildren(
+        this.hud,
+        h('div', { class: 'hud-line' }, itemId === null ? 'No item yet' : `No item ${itemId}`),
+      );
+      return;
+    }
+    const record = this.records.get(itemId);
+    const washed = this.report?.items.find((i) => i.item_id === itemId);
+    let paint: 'soiled' | 'clean' | 'residue' = 'soiled';
+    let layers = this.soilLayers(itemId);
+    if (washed !== undefined && washed.loaded && washed.simulated !== false) {
+      paint = washed.clean ? 'clean' : 'residue';
+      layers = washed.clean
+        ? BARE
+        : residueLayersByRegion(record?.soils ?? [], washed.residue_regions);
+    }
+    const factory = this.stage.scene.factory;
+    turntable.show(
+      `${itemId}|${paint}`,
+      () => factory.build(itemType, layers),
+      factory.bounds(itemType),
+    );
+    const name = geometry.item_types[itemType]?.display_name ?? itemType;
+    const word = paint === 'soiled' ? 'dirty' : paint === 'clean' ? 'clean' : 'residue left';
+    setChildren(
+      this.hud,
+      h('span', { class: 'tt-name' }, name),
+      h('span', { class: 'tt-id' }, ` ${itemId}`),
+      h('span', { class: `tt-state ${paint}` }, word),
+    );
   }
 
   /** Finds the job of a wash this page did not start (the phase says one is on) and follows it. */
@@ -910,28 +984,6 @@ export class App {
       // The next state message tries again.
     } finally {
       this.adopting = false;
-    }
-  }
-
-  /** A watching page looks closely at an item that has just been put in the machine. */
-  private watchNewItems(
-    frames: readonly { readonly items: { readonly [id: string]: DrawPose } }[],
-  ): void {
-    if (this.watchCamera === null || this.view === null) return;
-    const last = frames[frames.length - 1];
-    if (last === undefined) return;
-    const placed = new Set(this.view.state.placed.map((p) => p.item_id));
-    for (const [id, pose] of Object.entries(last.items)) {
-      if (placed.has(id)) continue;
-      this.watchCamera.focusOn(
-        new Vector3(
-          pose.position_mm[0] / 1000,
-          pose.position_mm[1] / 1000,
-          pose.position_mm[2] / 1000 + 0.04,
-        ),
-        Math.max(3.5, frames.length / 30 + 2.5),
-      );
-      return;
     }
   }
 
